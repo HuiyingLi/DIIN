@@ -56,6 +56,25 @@ def load_nli_data(path, snli=False, shuffle = True):
             random.shuffle(data)
     return data
 
+def load_quora_data(path, shuffle = True):
+    """
+    Load quora question pair data. 
+    The format of qqp is label\tsent1\tsent2.
+    """
+    data = []
+    with open(path, encoding='utf8') as f:
+        for line in tqdm(f):
+            ls = line.split("\t")
+            loaded_example = {}
+            loaded_example["label"] = ls[0]
+            loaded_example["sentence1"] = int(ls[1])
+            loaded_example["sentence2"] = int(ls[2])
+            data.append(loaded_example)
+        if shuffle:
+            random.seed(1)
+            random.shuffle(data)
+    return data
+
 def load_nli_data_genre(path, genre, snli=True, shuffle = True):
     """
     Load a specific genre's examples from MultiNLI, or load SNLI data and assign a "snli" genre to the examples.

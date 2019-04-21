@@ -26,13 +26,13 @@ class MyModel(object):
         self.premise_exact_match = tf.placeholder(tf.int32, [None, self.sequence_length,1], name='premise_exact_match')
         self.hypothesis_exact_match = tf.placeholder(tf.int32, [None, self.sequence_length,1], name='hypothesis_exact_match')
 
+        with tf.device("/cpu:0"):
+            self.global_step = tf.Variable(0, name='global_step', trainable=False)
         
-        self.global_step = tf.Variable(0, name='global_step', trainable=False)
         
-        
-        self.dropout_keep_rate = tf.train.exponential_decay(config.keep_rate, self.global_step, config.dropout_decay_step, config.dropout_decay_rate, staircase=False, name='dropout_keep_rate')
-        config.keep_rate = self.dropout_keep_rate
-        tf.summary.scalar('dropout_keep_rate', self.dropout_keep_rate)
+            self.dropout_keep_rate = tf.train.exponential_decay(config.keep_rate, self.global_step, config.dropout_decay_step, config.dropout_decay_rate, staircase=False, name='dropout_keep_rate')
+            config.keep_rate = self.dropout_keep_rate
+            tf.summary.scalar('dropout_keep_rate', self.dropout_keep_rate)
 
         self.y = tf.placeholder(tf.int32, [None], name='label_y')
         self.keep_rate_ph = tf.placeholder(tf.float32, [], name='keep_prob')
@@ -101,8 +101,9 @@ class MyModel(object):
                     h = self_attention_layer(config, self.is_train, hyp, p_mask=hyp_mask, scope="{}_layer_self_att_enc_h".format(i))
                     pre = p
                     hyp = h
-                    variable_summaries(p, "p_self_enc_summary_layer_{}".format(i))
-                    variable_summaries(h, "h_self_enc_summary_layer_{}".format(i))
+                    with tf.device("/cpu:0"):
+                        variable_summaries(p, "p_self_enc_summary_layer_{}".format(i))
+                        variable_summaries(h, "h_self_enc_summary_layer_{}".format(i))
             
                 
         with tf.variable_scope("main") as scope:
@@ -125,14 +126,15 @@ class MyModel(object):
 
         self.logits = linear(f0, self.pred_size ,True, bias_start=0.0, scope="logit", squeeze=False, wd=config.wd, input_keep_prob=config.keep_rate,
                                 is_train=self.is_train)
-
-        tf.summary.histogram('logit_histogram', self.logits)
+        with tf.device("/cpu:0"):
+            tf.summary.histogram('logit_histogram', self.logits)
 
         # Define the cost function
         self.total_cost = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(labels=self.y, logits=self.logits))
         self.acc = tf.reduce_mean(tf.cast(tf.equal(tf.arg_max(self.logits, dimension=1),tf.cast(self.y,tf.int64)), tf.float32))
-        tf.summary.scalar('acc', self.acc)
-        tf.summary.scalar('loss', self.total_cost)
+        with tf.device("/cpu:0"):
+            tf.summary.scalar('acc', self.acc)
+            tf.summary.scalar('loss', self.total_cost)
         #self.auc_ROC = tf.metrics.auc(tf.cast(self.y,tf.int64), tf.arg_max(self.logits, dimension=1), curve = 'ROC')
         #self.auc_PR =  tf.metrics.auc(tf.cast(self.y,tf.int64), tf.arg_max(self.logits, dimension=1), curve = 'PR')
         #tf.summary.scalar('auc_ROC', self.auc_ROC)
@@ -152,11 +154,13 @@ class MyModel(object):
                 # tf.cast((self.global_step - full_l2_step / 2) * 8, tf.float32) / tf.cast(full_l2_step / 2 ,tf.float32)
                 # l2loss_ratio = tf.sigmoid( tf.cast((self.global_step - full_l2_step / 2) * 8, tf.float32) / tf.cast(full_l2_step / 2 ,tf.float32)) * full_l2_ratio
                 l2loss_ratio = tf.sigmoid( ((gs_flt - half_l2_step_flt) * 8) / half_l2_step_flt) * full_l2_ratio
-                tf.summary.scalar('l2loss_ratio', l2loss_ratio)
+                with tf.device("/cpu:0"):
+                    tf.summary.scalar('l2loss_ratio', l2loss_ratio)
                 l2loss = weights_added * l2loss_ratio
             else:
                 l2loss = tf.add_n([tf.nn.l2_loss(tensor) for tensor in tf.trainable_variables() if tensor.name.endswith("weights:0") or tensor.name.endswith('kernel:0')]) * tf.constant(config.l2_regularization_ratio , dtype='float', shape=[], name='l2_regularization_ratio')
-            tf.summary.scalar('l2loss', l2loss)
+            with tf.device("/cpu:0"):
+                tf.summary.scalar('l2loss', l2loss)
             self.total_cost += l2loss
 
         if config.wo_enc_sharing or config.wo_highway_sharing_but_penalize_diff:
@@ -164,35 +168,35 @@ class MyModel(object):
             for i in range(config.self_att_enc_layers):
                 for tensor in tf.trainable_variables():
                     print(tensor.name)
-                    if tensor.name == "prepro/{}_layer_self_att_enc/self_attention/h_logits/first/kernel:0".format(i):
+                    if tensor.name == "prepro/{}_layer_self_att_enc/self_attention/h_logits/first/dense/kernel:0".format(i):
                         l_lg = tensor 
-                    elif tensor.name == "prepro/{}_layer_self_att_enc_h/self_attention/h_logits/first/kernel:0".format(i):
+                    elif tensor.name == "prepro/{}_layer_self_att_enc_h/self_attention/h_logits/first/dense/kernel:0".format(i):
                         r_lg = tensor 
-                    elif tensor.name == "prepro/{}_layer_self_att_enc/self_att_fuse_gate/lhs_1/kernel:0".format(i):    
+                    elif tensor.name == "prepro/{}_layer_self_att_enc/self_att_fuse_gate/lhs_1/dense/kernel:0".format(i):
                         l_fg_lhs_1 = tensor 
-                    elif tensor.name == "prepro/{}_layer_self_att_enc_h/self_att_fuse_gate/lhs_1/kernel:0".format(i):
+                    elif tensor.name == "prepro/{}_layer_self_att_enc_h/self_att_fuse_gate/lhs_1/dense/kernel:0".format(i):
                         r_fg_lhs_1= tensor
-                    elif tensor.name == "prepro/{}_layer_self_att_enc/self_att_fuse_gate/rhs_1/kernel:0".format(i):
+                    elif tensor.name == "prepro/{}_layer_self_att_enc/self_att_fuse_gate/rhs_1/dense/kernel:0".format(i):
                         l_fg_rhs_1= tensor
-                    elif tensor.name == "prepro/{}_layer_self_att_enc_h/self_att_fuse_gate/rhs_1/kernel:0".format(i):
+                    elif tensor.name == "prepro/{}_layer_self_att_enc_h/self_att_fuse_gate/rhs_1/dense/kernel:0".format(i):
                         r_fg_rhs_1= tensor
-                    elif tensor.name == "prepro/{}_layer_self_att_enc/self_att_fuse_gate/lhs_2/kernel:0".format(i):
+                    elif tensor.name == "prepro/{}_layer_self_att_enc/self_att_fuse_gate/lhs_2/dense/kernel:0".format(i):
                         l_fg_lhs_2= tensor
-                    elif tensor.name == "prepro/{}_layer_self_att_enc_h/self_att_fuse_gate/lhs_2/kernel:0".format(i):
+                    elif tensor.name == "prepro/{}_layer_self_att_enc_h/self_att_fuse_gate/lhs_2/dense/kernel:0".format(i):
                         r_fg_lhs_2= tensor
-                    elif tensor.name == "prepro/{}_layer_self_att_enc/self_att_fuse_gate/rhs_2/kernel:0".format(i):
+                    elif tensor.name == "prepro/{}_layer_self_att_enc/self_att_fuse_gate/rhs_2/dense/kernel:0".format(i):
                         l_fg_rhs_2= tensor
-                    elif tensor.name == "prepro/{}_layer_self_att_enc_h/self_att_fuse_gate/rhs_2/kernel:0".format(i):
+                    elif tensor.name == "prepro/{}_layer_self_att_enc_h/self_att_fuse_gate/rhs_2/dense/kernel:0".format(i):
                         r_fg_rhs_2= tensor
 
                     if config.two_gate_fuse_gate:
-                        if tensor.name == "prepro/{}_layer_self_att_enc/self_att_fuse_gate/lhs_3/kernel:0".format(i):    
+                        if tensor.name == "prepro/{}_layer_self_att_enc/self_att_fuse_gate/lhs_3/dense/kernel:0".format(i):
                             l_fg_lhs_3 = tensor 
-                        elif tensor.name == "prepro/{}_layer_self_att_enc_h/self_att_fuse_gate/lhs_3/kernel:0".format(i):
+                        elif tensor.name == "prepro/{}_layer_self_att_enc_h/self_att_fuse_gate/lhs_3/dense/kernel:0".format(i):
                             r_fg_lhs_3 = tensor
-                        elif tensor.name == "prepro/{}_layer_self_att_enc/self_att_fuse_gate/rhs_3/kernel:0".format(i):
+                        elif tensor.name == "prepro/{}_layer_self_att_enc/self_att_fuse_gate/rhs_3/dense/kernel:0".format(i):
                             l_fg_rhs_3 = tensor
-                        elif tensor.name == "prepro/{}_layer_self_att_enc_h/self_att_fuse_gate/rhs_3/kernel:0".format(i):
+                        elif tensor.name == "prepro/{}_layer_self_att_enc_h/self_att_fuse_gate/rhs_3/dense/kernel:0".format(i):
                             r_fg_rhs_3 = tensor
 
                 diffs += [l_lg - r_lg, l_fg_lhs_1 - r_fg_lhs_1, l_fg_rhs_1 - r_fg_rhs_1, l_fg_lhs_2 - r_fg_lhs_2, l_fg_rhs_2 - r_fg_rhs_2]
@@ -201,11 +205,12 @@ class MyModel(object):
             
 
             diff_loss = tf.add_n([tf.nn.l2_loss(tensor) for tensor in diffs]) * tf.constant(config.diff_penalty_loss_ratio , dtype='float', shape=[], name='diff_penalty_loss_ratio')
-            tf.summary.scalar('diff_penalty_loss', diff_loss)
+            with tf.device("/cpu:0"):
+                tf.summary.scalar('diff_penalty_loss', diff_loss)
             self.total_cost += diff_loss
 
-
-        self.summary = tf.summary.merge_all()
+        with tf.device("/cpu:0"):
+            self.summary = tf.summary.merge_all()
 
         total_parameters = 0
         for v in tf.global_variables():

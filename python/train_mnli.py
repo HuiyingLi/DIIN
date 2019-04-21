@@ -1,6 +1,6 @@
 """
 Training script to train a model on MultiNLI and, optionally, on SNLI data as well.
-The "alpha" hyperparamaters set in paramaters.py determines if SNLI data is used in training. If alpha = 0, no SNLI data is used in training. If alpha > 0, then down-sampled SNLI data is used in training. 
+The "alpha" hyperparamaters set in paramaters.py determines if SNLI data is used in training. If alpha = 0, no SNLI data is used in training. If alpha > 0, then down-sampled SNLI data is used in training.
 """
 
 import tensorflow as tf
@@ -14,6 +14,7 @@ from util.evaluate import *
 from tqdm import tqdm
 import gzip
 import pickle
+import pdb
 
 
 FIXED_PARAMETERS, config = params.load_parameters()
@@ -21,8 +22,7 @@ modname = FIXED_PARAMETERS["model_name"]
 
 if not os.path.exists(FIXED_PARAMETERS["log_path"]):
     os.makedirs(FIXED_PARAMETERS["log_path"])
-if not os.path.exists(config.tbpath):
-    os.makedirs(config.tbpath)
+    #os.makedirs(config.tbpath)
     config.tbpath = FIXED_PARAMETERS["log_path"]
 
 if config.test:
@@ -33,11 +33,11 @@ logger = logger.Logger(logpath)
 
 model = FIXED_PARAMETERS["model_type"]
 
-module = importlib.import_module(".".join(['models', model])) 
+module = importlib.import_module(".".join(['models', model]))
 MyModel = getattr(module, 'MyModel')
 
 # Logging parameter settings at each launch of training script
-# This will help ensure nothing goes awry in reloading a model and we consistenyl use the same hyperparameter settings. 
+# This will help ensure nothing goes awry in reloading a model and we consistenyl use the same hyperparameter settings.
 logger.Log("FIXED_PARAMETERS\n %s" % FIXED_PARAMETERS)
 
 
@@ -106,11 +106,11 @@ class modelClassifier:
         self.batch_size = FIXED_PARAMETERS["batch_size"]
         self.emb_train = FIXED_PARAMETERS["emb_train"]
         self.keep_rate = FIXED_PARAMETERS["keep_rate"]
-        self.sequence_length = FIXED_PARAMETERS["seq_length"] 
+        self.sequence_length = FIXED_PARAMETERS["seq_length"]
         self.alpha = FIXED_PARAMETERS["alpha"]
         self.config = config
 
-        
+
 
 
         logger.Log("Building model from %s.py" %(model))
@@ -141,6 +141,7 @@ class modelClassifier:
 
 
     def get_minibatch(self, dataset, start_index, end_index, training=False):
+        #pdb.set_trace()
         indices = range(start_index, end_index)
 
         genres = [dataset[i]['genre'] for i in indices]
@@ -161,7 +162,7 @@ class modelClassifier:
 
         premise_exact_match = construct_one_hot_feature_tensor([shared_content[pairIDs[i]]["sentence1_token_exact_match_with_s2"][:] for i in range(len(indices))], premise_pad_crop_pair, 1)
         hypothesis_exact_match = construct_one_hot_feature_tensor([shared_content[pairIDs[i]]["sentence2_token_exact_match_with_s1"][:] for i in range(len(indices))], hypothesis_pad_crop_pair, 1)
-  
+
         premise_exact_match = np.expand_dims(premise_exact_match, 2)
         hypothesis_exact_match = np.expand_dims(hypothesis_exact_match, 2)
 
@@ -169,12 +170,13 @@ class modelClassifier:
         return premise_vectors, hypothesis_vectors, labels, genres, premise_pos_vectors, \
                 hypothesis_pos_vectors, pairIDs, premise_char_vectors, hypothesis_char_vectors, \
                 premise_exact_match, hypothesis_exact_match
-                
+
 
 
     def train(self, train_mnli, train_snli, dev_mat, dev_mismat, dev_snli):
-        sess_config = tf.ConfigProto()
-        sess_config.gpu_options.allow_growth=True   
+        #sess_config = tf.ConfigProto()
+        sess_config = tf.ConfigProto(allow_soft_placement=True)
+        sess_config.gpu_options.allow_growth=True
         self.sess = tf.Session(config=sess_config)
         self.sess.run(self.init)
 
@@ -185,10 +187,11 @@ class modelClassifier:
         self.last_train_acc = [.001, .001, .001, .001, .001]
         self.best_step = 0
         self.train_dev_set = False
-        self.dont_print_unnecessary_info = False
+        #self.dont_print_unnecessary_info = False
+        self.dont_print_unnecessary_info = True
         self.collect_failed_sample = False
 
-        # Restore most recent checkpoint if it exists. 
+        # Restore most recent checkpoint if it exists.
         # Also restore values for best dev-set accuracy and best training-set accuracy
         ckpt_file = os.path.join(FIXED_PARAMETERS["ckpt_path"], modname) + ".ckpt"
         if os.path.isfile(ckpt_file + ".meta"):
@@ -227,13 +230,13 @@ class modelClassifier:
 
             else:
                 training_data = train_mnli + random.sample(train_snli, beta)
-                
+
             random.shuffle(training_data)
             avg_cost = 0.
             total_batch = int(len(training_data) / self.batch_size)
-            
-            # Boolean stating that training has not been completed, 
-            self.completed = False 
+
+            # Boolean stating that training has not been completed,
+            self.completed = False
 
             # Loop over all batches in epoch
             for i in range(total_batch):
@@ -243,12 +246,12 @@ class modelClassifier:
                 minibatch_pre_pos, minibatch_hyp_pos, pairIDs, premise_char_vectors, hypothesis_char_vectors, \
                 premise_exact_match, hypothesis_exact_match  = self.get_minibatch(
                     training_data, self.batch_size * i, self.batch_size * (i + 1), True)
-                
-                # Run the optimizer to take a gradient step, and also fetch the value of the 
+
+                # Run the optimizer to take a gradient step, and also fetch the value of the
                 # cost function for logging
                 feed_dict = {self.model.premise_x: minibatch_premise_vectors,
                                 self.model.hypothesis_x: minibatch_hypothesis_vectors,
-                                self.model.y: minibatch_labels, 
+                                self.model.y: minibatch_labels,
                                 self.model.keep_rate_ph: self.keep_rate,
                                 self.model.is_train: True,
                                 self.model.premise_pos: minibatch_pre_pos,
@@ -272,8 +275,9 @@ class modelClassifier:
                     else:
                         dev_acc_mat, dev_cost_mat, confmx = evaluate_classifier(self.classify, dev_mat, self.batch_size)
                         logger.Log("Confusion Matrix on dev-matched\n{}".format(confmx))
-                    
+
                     if config.training_completely_on_snli:
+                            pdb.set_trace()
                             dev_acc_snli, dev_cost_snli, _ = evaluate_classifier(self.classify, dev_snli, self.batch_size)
                             dev_acc_mismat, dev_cost_mismat = 0,0
                     elif not self.dont_print_unnecessary_info or 100 * (1 - self.best_dev_mat / dev_acc_mat) > 0.04:
@@ -286,7 +290,7 @@ class modelClassifier:
                         mtrain_acc, mtrain_cost, = 0, 0
                     else:
                         mtrain_acc, mtrain_cost, _ = evaluate_classifier(self.classify, train_mnli[0:5000], self.batch_size)
-                    
+
                     if self.alpha != 0.:
                         if not self.dont_print_unnecessary_info or 100 * (1 - self.best_dev_mat / dev_acc_mat) > 0.04:
                             strain_acc, strain_cost,_ = evaluate_classifier(self.classify, train_snli[0:5000], self.batch_size)
@@ -318,14 +322,14 @@ class modelClassifier:
                 if self.best_dev_mat > 0.777 and not config.training_completely_on_snli:
                     self.eval_step = 500
                     self.save_step = 500
-                    
+
 
 
 
                 if self.best_dev_mat > 0.780 and not config.training_completely_on_snli:
                     self.eval_step = 100
                     self.save_step = 100
-                    self.dont_print_unnecessary_info = True 
+                    self.dont_print_unnecessary_info = True
                     # if config.use_sgd_at_the_end:
                     #     self.optimizer =  tf.train.GradientDescentOptimizer(0.00001).minimize(self.model.total_cost, global_step = self.global_step)
 
@@ -333,11 +337,11 @@ class modelClassifier:
                 if self.best_dev_mat > 0.872 and config.training_completely_on_snli:
                     self.eval_step = 500
                     self.save_step = 500
-                
+
                 if self.best_dev_mat > 0.878 and config.training_completely_on_snli:
                     self.eval_step = 100
                     self.save_step = 100
-                    self.dont_print_unnecessary_info = True 
+                    self.dont_print_unnecessary_info = True
 
 
 
@@ -345,17 +349,17 @@ class modelClassifier:
 
                 # Compute average loss
                 avg_cost += c / (total_batch * self.batch_size)
-                                
+
             # Display some statistics about the epoch
             if self.epoch % self.display_epoch_freq == 0:
                 logger.Log("Epoch: %i\t Avg. Cost: %f" %(self.epoch+1, avg_cost))
-            
-            self.epoch += 1 
+
+            self.epoch += 1
             self.last_train_acc[(self.epoch % 5) - 1] = mtrain_acc
 
             # Early stopping
             self.early_stopping_step = 35000
-            progress = 1000 * (sum(self.last_train_acc)/(5 * min(self.last_train_acc)) - 1) 
+            progress = 1000 * (sum(self.last_train_acc)/(5 * min(self.last_train_acc)) - 1)
 
 
             if (progress < 0.1) or (self.step > self.best_step + self.early_stopping_step):
@@ -381,11 +385,11 @@ class modelClassifier:
             logger.Log("Model restored from file: %s" % best_path)
 
         total_batch = int(len(examples) / self.batch_size)
-        pred_size = 3 
+        pred_size = 3
         logits = np.empty(pred_size)
         genres = []
         costs = 0
-        
+
         for i in tqdm(range(total_batch + 1)):
             if i != total_batch:
                 minibatch_premise_vectors, minibatch_hypothesis_vectors, minibatch_labels, minibatch_genres, \
@@ -397,9 +401,9 @@ class modelClassifier:
                 minibatch_pre_pos, minibatch_hyp_pos, pairIDs, premise_char_vectors, hypothesis_char_vectors, \
                 premise_exact_match, hypothesis_exact_match = self.get_minibatch(
                     examples, self.batch_size * i, len(examples))
-            feed_dict = {self.model.premise_x: minibatch_premise_vectors, 
+            feed_dict = {self.model.premise_x: minibatch_premise_vectors,
                                 self.model.hypothesis_x: minibatch_hypothesis_vectors,
-                                self.model.y: minibatch_labels, 
+                                self.model.y: minibatch_labels,
                                 self.model.keep_rate_ph: 1.0,
                                 self.model.is_train: False,
                                 self.model.premise_pos: minibatch_pre_pos,
@@ -459,9 +463,9 @@ class modelClassifier:
                 minibatch_pre_pos, minibatch_hyp_pos, pairIDs, premise_char_vectors, hypothesis_char_vectors, \
                 premise_exact_match, hypothesis_exact_match = self.get_minibatch(
                     examples, self.batch_size * i, len(examples))
-            feed_dict = {self.model.premise_x: minibatch_premise_vectors, 
+            feed_dict = {self.model.premise_x: minibatch_premise_vectors,
                                 self.model.hypothesis_x: minibatch_hypothesis_vectors,
-                                self.model.y: minibatch_labels, 
+                                self.model.y: minibatch_labels,
                                 self.model.keep_rate_ph: 1.0,
                                 self.model.is_train: False,
                                 self.model.premise_pos: minibatch_pre_pos,
@@ -475,8 +479,8 @@ class modelClassifier:
             logits = np.vstack([logits, logit])
         IDs = IDs[1:]
         logits = np.argmax(logits[1:], axis=1)
-        save_submission(path, IDs, logits[1:])
-
+        #save_submission(path, IDs, logits[1:])
+        save_submission(path, IDs, logits)
 
 
 
@@ -485,12 +489,11 @@ class modelClassifier:
 classifier = modelClassifier()
 
 """
-Either train the model and then run it on the test-sets or 
+Either train the model and then run it on the test-sets or
 load the best checkpoint and get accuracy on the test set. Default setting is to train the model.
 """
 
 test = params.train_or_test()
-
 
 if config.preprocess_data_only:
     pass
@@ -510,7 +513,7 @@ elif test == False:
         logger.Log("Generating SNLI test pred")
         test_snli_path = os.path.join(FIXED_PARAMETERS["log_path"], "snli_test_{}.csv".format(modname))
         classifier.generate_predictions_with_id(test_snli_path, test_snli)
-        
+
     else:
         logger.Log("Generating dev matched answers.")
         dev_matched_path = os.path.join(FIXED_PARAMETERS["log_path"], "dev_matched_submission_{}.csv".format(modname))
@@ -523,12 +526,14 @@ else:
     if config.training_completely_on_snli:
         logger.Log("Generating SNLI dev pred")
         dev_snli_path = os.path.join(FIXED_PARAMETERS["log_path"], "snli_dev_{}.csv".format(modname))
-        classifier.generate_predictions_with_id(dev_snli_path, dev_snli)
-
+        #classifier.generate_predictions_with_id(dev_snli_path, dev_snli)
+        dacc, dcost, dconfmt = evaluate_classifier(classifier.classify, dev_snli, FIXED_PARAMETERS["batch_size"])
+        print(dacc, dconfmt)
         logger.Log("Generating SNLI test pred")
         test_snli_path = os.path.join(FIXED_PARAMETERS["log_path"], "snli_test_{}.csv".format(modname))
-        classifier.generate_predictions_with_id(test_snli_path, test_snli)
-        
+        #classifier.generate_predictions_with_id(test_snli_path, test_snli)
+        tacc, tcost, tconfmt = evaluate_classifier(classifier.classify, test_snli, FIXED_PARAMETERS["batch_size"])
+        print(tacc, tconfmt)
     else:
         logger.Log("Evaluating on multiNLI matched dev-set")
         matched_multinli_dev_set_eval = evaluate_classifier(classifier.classify, dev_matched, FIXED_PARAMETERS["batch_size"])
