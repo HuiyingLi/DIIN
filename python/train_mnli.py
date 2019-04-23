@@ -15,7 +15,7 @@ from tqdm import tqdm
 import gzip
 import pickle
 import pdb
-
+import h5py
 
 FIXED_PARAMETERS, config = params.load_parameters()
 modname = FIXED_PARAMETERS["model_name"]
@@ -42,6 +42,12 @@ logger.Log("FIXED_PARAMETERS\n %s" % FIXED_PARAMETERS)
 
 
 ######################### LOAD DATA #############################
+embedding_dir = os.path.join(config.datapath, "embeddings")
+if not os.path.exists(embedding_dir):
+    os.makedirs(embedding_dir)
+
+
+embedding_path = os.path.join(embedding_dir, "mnli_emb_snli_embedding.h5")
 
 
 if config.debug_model:
@@ -51,8 +57,8 @@ if config.debug_model:
     indices_to_words, word_indices, char_indices, indices_to_chars = sentences_to_padded_index_sequences([test_matched])
     shared_content = load_mnli_shared_content()
 else:
-
     logger.Log("Loading data SNLI")
+    ##make a smaller embedding matrix for collected vocabulary taking care of OOV emb, if already exist directly load
     training_snli = load_nli_data(FIXED_PARAMETERS["training_snli"], snli=True)
     dev_snli = load_nli_data(FIXED_PARAMETERS["dev_snli"], snli=True)
     test_snli = load_nli_data(FIXED_PARAMETERS["test_snli"], snli=True)
@@ -62,36 +68,37 @@ else:
     dev_matched = load_nli_data(FIXED_PARAMETERS["dev_matched"])
     dev_mismatched = load_nli_data(FIXED_PARAMETERS["dev_mismatched"])
 
-    test_matched = load_nli_data(FIXED_PARAMETERS["test_matched"], shuffle = False)
-    test_mismatched = load_nli_data(FIXED_PARAMETERS["test_mismatched"], shuffle = False)
+    test_matched = load_nli_data(FIXED_PARAMETERS["test_matched"], shuffle=False)
+    test_mismatched = load_nli_data(FIXED_PARAMETERS["test_mismatched"], shuffle=False)
 
     shared_content = load_mnli_shared_content()
 
+if os.path.exists(embedding_path):  ##putting word/char ids into the h5 file together with embeddings
+    print("Use existing embedding file:", embedding_path)
+    with h5py.File(embedding_path, 'r') as f:
+        loaded_embeddings =np.array(f.get('embeddings'))
+        id2word = json.loads(f.get('embeddings').attrs['id2word'])
+        indices_to_words = dict(zip([int(k) for k in id2word.keys()], id2word.values()))
+        word_indices = dict(zip(id2word.values(), [int(k) for k in id2word.keys()]))
+        id2char = json.loads(f.get('embeddings').attrs['id2char'])
+        indices_to_chars = dict(zip([int(k) for k in id2char.keys()], id2char.values()))
+        char_indices = dict(zip(id2char.values(), [int(k) for k in id2char.keys()]))
+        sentences_to_padded_index_sequences(
+            [training_mnli, training_snli, dev_matched, dev_mismatched, test_matched, test_mismatched, dev_snli,
+             test_snli], indices_to_words, word_indices, indices_to_chars, char_indices)
+else:
+
     logger.Log("Loading embeddings")
     indices_to_words, word_indices, char_indices, indices_to_chars = sentences_to_padded_index_sequences([training_mnli, training_snli, dev_matched, dev_mismatched, test_matched, test_mismatched, dev_snli, test_snli])
+    loaded_embeddings = loadEmbedding_rand(FIXED_PARAMETERS["embedding_data_path"], word_indices)
+    with h5py.File(embedding_path, 'w') as f:
+        dataset = f.create_dataset('embeddings', data=loaded_embeddings)
+        id2word = json.dumps(indices_to_words)
+        id2char = json.dumps(indices_to_chars)
+        dataset.attrs["id2word"] = id2word
+        dataset.attrs["id2char"] = id2char
 
 config.char_vocab_size = len(char_indices.keys())
-
-
-embedding_dir = os.path.join(config.datapath, "embeddings")
-if not os.path.exists(embedding_dir):
-    os.makedirs(embedding_dir)
-
-
-embedding_path = os.path.join(embedding_dir, "mnli_emb_snli_embedding.pkl.gz")
-
-print("embedding path exist")
-print(os.path.exists(embedding_path))
-if os.path.exists(embedding_path):
-    f = gzip.open(embedding_path, 'rb')
-    loaded_embeddings = pickle.load(f)
-    f.close()
-else:
-    loaded_embeddings = loadEmbedding_rand(FIXED_PARAMETERS["embedding_data_path"], word_indices)
-    f = gzip.open(embedding_path, 'wb')
-    pickle.dump(loaded_embeddings, f)
-    f.close()
-
 
 class modelClassifier:
     def __init__(self):
@@ -160,6 +167,7 @@ class modelClassifier:
         premise_pos_vectors = generate_pos_feature_tensor([dataset[i]['sentence1_parse'][:] for i in indices], premise_pad_crop_pair)
         hypothesis_pos_vectors = generate_pos_feature_tensor([dataset[i]['sentence2_parse'][:] for i in indices], hypothesis_pad_crop_pair)
 
+        ###get precomputed exact match feature from shared_json
         premise_exact_match = construct_one_hot_feature_tensor([shared_content[pairIDs[i]]["sentence1_token_exact_match_with_s2"][:] for i in range(len(indices))], premise_pad_crop_pair, 1)
         hypothesis_exact_match = construct_one_hot_feature_tensor([shared_content[pairIDs[i]]["sentence2_token_exact_match_with_s1"][:] for i in range(len(indices))], hypothesis_pad_crop_pair, 1)
 

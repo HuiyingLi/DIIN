@@ -200,7 +200,7 @@ def load_mnli_shared_content():
         # shared_content = json.load(f)
     return shared_content
 
-def sentences_to_padded_index_sequences(datasets):
+def sentences_to_padded_index_sequences(datasets, indices_to_words=None, word_indices=None, indices_to_char=None, char_indices=None):
     """
     Annotate datasets with feature vectors. Adding right-sided padding. 
     """
@@ -218,6 +218,8 @@ def sentences_to_padded_index_sequences(datasets):
     # shared_content = mgr.dict()
     # process_num = config.num_process_prepro
     # process_num = 1
+
+    ###Tokenization, tokens from binary_parse using divider split
     for i, dataset in enumerate(datasets):
         # if not shared_file_exist:
         #     num_per_share = len(dataset) / process_num + 1
@@ -244,24 +246,24 @@ def sentences_to_padded_index_sequences(datasets):
 
 
     
-
-
-    vocabulary = set([word for word in word_counter])
-    vocabulary = list(vocabulary)
-    if config.embedding_replacing_rare_word_with_UNK: 
-        vocabulary = [PADDING, "<UNK>"] + vocabulary
-    else:
-        vocabulary = [PADDING] + vocabulary
-    # print(char_counter)
-    word_indices = dict(zip(vocabulary, range(len(vocabulary))))
-    indices_to_words = {v: k for k, v in word_indices.items()}
-    char_vocab = set([char for char in char_counter])
-    char_vocab = list(char_vocab)
-    char_vocab = [PADDING] + char_vocab
-    char_indices = dict(zip(char_vocab, range(len(char_vocab))))
-    indices_to_char = {v: k for k, v in char_indices.items()}
+    if not word_indices and not char_indices:
+        #Create vocabulary for both word and char
+        vocabulary = set([word for word in word_counter])
+        vocabulary = list(vocabulary)
+        if config.embedding_replacing_rare_word_with_UNK:
+            vocabulary = [PADDING, "<UNK>"] + vocabulary
+        else:
+            vocabulary = [PADDING] + vocabulary
+        # print(char_counter)
+        word_indices = dict(zip(vocabulary, range(len(vocabulary))))
+        indices_to_words = {v: k for k, v in word_indices.items()}
+        char_vocab = set([char for char in char_counter])
+        char_vocab = list(char_vocab)
+        char_vocab = [PADDING] + char_vocab
+        char_indices = dict(zip(char_vocab, range(len(char_vocab))))
+        indices_to_char = {v: k for k, v in char_indices.items()}
     
-
+    ####Pad sentence and words and fill in inverse term frequency for words
     for i, dataset in enumerate(datasets):
         for example in tqdm(dataset):
             for sentence in ['sentence1_binary_parse', 'sentence2_binary_parse']:
