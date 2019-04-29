@@ -3,6 +3,7 @@ This file generates tokenization, POS features, stemmed words from a spacy servi
 """
 import json
 import pdb
+import glob
 from util.spacy.spacy_client import SpacyClient
 client = SpacyClient()
 req_batch_size = 200
@@ -10,9 +11,7 @@ req_batch_size = 200
 def nli_jsonl_reader(fpath):
     for l in open(fpath, 'r', encoding='utf8'):
         o = json.loads(l.strip())
-        sent1 = o['sentence1']
-        sent2 = o['sentence2']
-        yield  sent1, sent2, o['captionID'], o['pairID'],o['gold_label']
+        yield o['sentence1'], o['sentence2'], {k:o[k] for k in o if ('sentence' not in k and 'annotator' not in k)}
 
 def annotate_corpus(fplst):
     """
@@ -25,7 +24,7 @@ def annotate_corpus(fplst):
         outputfp = fp[:fp.rfind('.')]+'.spacy.jsonl'
         req_batch=[]
         with open(outputfp, 'w', encoding='utf8') as outputf:
-            for s1, s2, captionID, pairID, gold_label in nli_jsonl_reader(fp):
+            for s1, s2, otherdict in nli_jsonl_reader(fp):
                 req_batch.append(s1)
                 req_batch.append(s2)
                 if len(req_batch) == req_batch_size:
@@ -34,8 +33,11 @@ def annotate_corpus(fplst):
                     for i in range(len(resp)//2):
                         s1ann = json.loads(resp[i*2])
                         s2ann = json.loads(resp[i*2+1])
-                        o = {'sentence1':s1ann, 'sentence2':s2ann, 'pairID':pairID, 'captionID':captionID, 'gold_label':gold_label}
+                        o = {'sentence1':s1ann, 'sentence2':s2ann}
+                        o = {**o, **otherdict}
                         outputf.writelines(json.dumps(o)+'\n')
                     req_batch=[]
+        print("Done annotating file", fp)
 
-annotate_corpus(['/Users/huiyingli/Documents/DIIN/data/snli_1.0/snli_1.0_{}.jsonl'.format(data) for data in ['train','dev','test']])
+#annotate_corpus(glob.glob('/Users/huiyingli/Documents/DIIN/data/multinli_0.9/*.jsonl'))
+annotate_corpus(glob.glob('/Users/huiyingli/Documents/DIIN/data/snli_1.0/*.jsonl'))
