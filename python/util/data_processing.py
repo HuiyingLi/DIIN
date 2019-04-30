@@ -26,6 +26,7 @@ LABEL_MAP = {
 
 PADDING = "<PAD>"
 POS_Tagging = [PADDING, 'WP$', 'RBS', 'SYM', 'WRB', 'IN', 'VB', 'POS', 'TO', ':', '-RRB-', '$', 'MD', 'JJ', '#', 'CD', '``', 'JJR', 'NNP', "''", 'LS', 'VBP', 'VBD', 'FW', 'RBR', 'JJS', 'DT', 'VBG', 'RP', 'NNS', 'RB', 'PDT', 'PRP$', '.', 'XX', 'NNPS', 'UH', 'EX', 'NN', 'WDT', 'VBN', 'VBZ', 'CC', ',', '-LRB-', 'PRP', 'WP']
+POS_Tagging_spacy = ['-LRB-','-RRB-', ',', ':', '.', "''", '""', '``', '#', '$', 'ADD', 'AFX','BES','CC','CD','DT','EX','FW','GW','HVS','HYPH','IN','JJ','JJR','JJS','LS','MD','NFP','NIL','NN','NNP','NNPS','NNS','PDT','POS','PRP','PRP$','RB','RBR','RBS','RP','_SP','SYM','TO','UH','VB','VBD','VBG','VBN','VBP','VBZ','WDT','WP','WP$','WRB','XX']
 POS_dict = {pos:i for i, pos in enumerate(POS_Tagging)}
 
 base_path = os.getcwd()
