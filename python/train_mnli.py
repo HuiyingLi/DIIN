@@ -47,7 +47,7 @@ if not os.path.exists(embedding_dir):
     os.makedirs(embedding_dir)
 
 
-embedding_path = os.path.join(embedding_dir, "mnli_emb_snli_embedding.h5")
+embedding_path = os.path.join(embedding_dir, "mnli_emb_snli_spacy_embedding.h5")
 
 
 if config.debug_model:
@@ -72,7 +72,7 @@ else:
     test_mismatched = load_nli_data(FIXED_PARAMETERS["test_mismatched"], shuffle=False)
 
     shared_content = load_mnli_shared_content()
-
+pdb.set_trace()
 if os.path.exists(embedding_path):  ##putting word/char ids into the h5 file together with embeddings
     print("Use existing embedding file:", embedding_path)
     with h5py.File(embedding_path, 'r') as f:

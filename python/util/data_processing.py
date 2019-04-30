@@ -206,10 +206,14 @@ def sentences_to_padded_index_sequences(datasets, indices_to_words=None, word_in
     Annotate datasets with feature vectors. Adding right-sided padding. 
     """
     # Extract vocabulary
-    def tokenize(string):
-        string = re.sub(r'\(|\)', '', string)
-        return string.split()
-
+    def extract_tokens(sentobj):
+        tokenlst = []
+        msg = sentobj['message']['text']
+        for sent in sentobj['sentences']:
+            for tkobj in sent['tokens']:
+                idx = tkobj['idx'] if 'idx' in tkobj else 0
+                tokenlst.append(msg[idx:(idx+tkobj['len'])])
+        return tokenlst
     
     
 
@@ -220,34 +224,32 @@ def sentences_to_padded_index_sequences(datasets, indices_to_words=None, word_in
     # process_num = config.num_process_prepro
     # process_num = 1
 
-    ###Tokenization, tokens from binary_parse using divider split
-    for i, dataset in enumerate(datasets):
-        # if not shared_file_exist:
-        #     num_per_share = len(dataset) / process_num + 1
-        #     jobs = [ multiprocessing.Process(target=worker, args=(shared_content, dataset[i * num_per_share : (i + 1) * num_per_share] )) for i in range(process_num)]
-        #     for j in jobs:
-        #         j.start()
-        #     for j in jobs:
-        #         j.join()
-
-        for example in tqdm(dataset):
-            s1_tokenize = tokenize(example['sentence1_binary_parse'])
-            s2_tokenize = tokenize(example['sentence2_binary_parse'])
-
-            word_counter.update(s1_tokenize)
-            word_counter.update(s2_tokenize)
-
-            for i, word in enumerate(s1_tokenize):
-                char_counter.update([c for c in word])
-            for word in s2_tokenize:
-                char_counter.update([c for c in word])
-
-        # shared_content = {k:v for k, v in shared_content.items()}
-
-
-
+    ##if vocabulary doesnt exist, collect tokens and build vocabulary
+    if not word_indices or not char_indices:
+        for i, dataset in enumerate(datasets):
+            # if not shared_file_exist:
+            #     num_per_share = len(dataset) / process_num + 1
+            #     jobs = [ multiprocessing.Process(target=worker, args=(shared_content, dataset[i * num_per_share : (i + 1) * num_per_share] )) for i in range(process_num)]
+            #     for j in jobs:
+            #         j.start()
+            #     for j in jobs:
+            #         j.join()
     
-    if not word_indices and not char_indices:
+            for example in tqdm(dataset):
+                #get the tokens
+                s1_tokenize = extract_tokens(example['sentence1'])
+                s2_tokenize = extract_tokens(example['sentence2'])
+    
+                word_counter.update(s1_tokenize)
+                word_counter.update(s2_tokenize)
+    
+                for i, word in enumerate(s1_tokenize):
+                    char_counter.update([c for c in word])
+                for word in s2_tokenize:
+                    char_counter.update([c for c in word])
+    
+            # shared_content = {k:v for k, v in shared_content.items()}
+    
         #Create vocabulary for both word and char
         vocabulary = set([word for word in word_counter])
         vocabulary = list(vocabulary)
@@ -267,11 +269,11 @@ def sentences_to_padded_index_sequences(datasets, indices_to_words=None, word_in
     ####Pad sentence and words and fill in inverse term frequency for words
     for i, dataset in enumerate(datasets):
         for example in tqdm(dataset):
-            for sentence in ['sentence1_binary_parse', 'sentence2_binary_parse']:
+            for sentence in ['sentence1', 'sentence2']:
                 example[sentence + '_index_sequence'] = np.zeros((FIXED_PARAMETERS["seq_length"]), dtype=np.int32)
                 example[sentence + '_inverse_term_frequency'] = np.zeros((FIXED_PARAMETERS["seq_length"]), dtype=np.float32)
 
-                token_sequence = tokenize(example[sentence])
+                token_sequence = extract_tokens(example[sentence])
                 padding = FIXED_PARAMETERS["seq_length"] - len(token_sequence)
                       
                 for i in range(FIXED_PARAMETERS["seq_length"]):
