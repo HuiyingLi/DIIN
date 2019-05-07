@@ -2,6 +2,7 @@ import tensorflow as tf
 from util import blocks
 from my.tensorflow.nn import softsel, get_logits, highway_network, multi_conv1d, linear, conv2d, cosine_similarity, variable_summaries, dense_logits, fuse_gate
 from my.tensorflow import flatten, reconstruct, add_wd, exp_mask
+from util.data_annotation import POS_dict_spacy
 import numpy as np
 
 class MyModel(object):
@@ -14,13 +15,14 @@ class MyModel(object):
         self.pred_size = pred_size 
         self.context_seq_len = context_seq_len
         self.query_seq_len = query_seq_len
+        self.pos_tag_len = len(POS_dict_spacy)
         # self.config = config
 
         ## Define the placeholders    
         self.premise_x = tf.placeholder(tf.int32, [None, self.sequence_length], name='premise')
         self.hypothesis_x = tf.placeholder(tf.int32, [None, self.sequence_length], name='hypothesis')
-        self.premise_pos = tf.placeholder(tf.int32, [None, self.sequence_length, 47], name='premise_pos')
-        self.hypothesis_pos = tf.placeholder(tf.int32, [None, self.sequence_length, 47], name='hypothesis_pos')
+        self.premise_pos = tf.placeholder(tf.int32, [None, self.sequence_length, self.pos_tag_len], name='premise_pos')
+        self.hypothesis_pos = tf.placeholder(tf.int32, [None, self.sequence_length, self.pos_tag_len], name='hypothesis_pos')
         self.premise_char = tf.placeholder(tf.int32, [None, self.sequence_length, config.char_in_word_size], name='premise_char')
         self.hypothesis_char = tf.placeholder(tf.int32, [None, self.sequence_length, config.char_in_word_size], name='hypothesis_char')
         self.premise_exact_match = tf.placeholder(tf.int32, [None, self.sequence_length,1], name='premise_exact_match')
