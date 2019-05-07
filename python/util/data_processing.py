@@ -10,11 +10,12 @@ from tqdm import tqdm
 import nltk
 from nltk.corpus import wordnet as wn 
 import os
+from util.data_annotation import POS_dict_spacy, PADDING
 import pickle
 import multiprocessing
 from nltk.tag import StanfordNERTagger
 from nltk.tag import StanfordPOSTagger
-
+import pdb
 FIXED_PARAMETERS, config = params.load_parameters()
 
 LABEL_MAP = {
@@ -24,10 +25,6 @@ LABEL_MAP = {
     "hidden": -1
 }
 
-PADDING = "<PAD>"
-POS_Tagging = [PADDING, 'WP$', 'RBS', 'SYM', 'WRB', 'IN', 'VB', 'POS', 'TO', ':', '-RRB-', '$', 'MD', 'JJ', '#', 'CD', '``', 'JJR', 'NNP', "''", 'LS', 'VBP', 'VBD', 'FW', 'RBR', 'JJS', 'DT', 'VBG', 'RP', 'NNS', 'RB', 'PDT', 'PRP$', '.', 'XX', 'NNPS', 'UH', 'EX', 'NN', 'WDT', 'VBN', 'VBZ', 'CC', ',', '-LRB-', 'PRP', 'WP']
-POS_Tagging_spacy = ['-LRB-','-RRB-', ',', ':', '.', "''", '""', '``', '#', '$', 'ADD', 'AFX','BES','CC','CD','DT','EX','FW','GW','HVS','HYPH','IN','JJ','JJR','JJS','LS','MD','NFP','NIL','NN','NNP','NNPS','NNS','PDT','POS','PRP','PRP$','RB','RBR','RBS','RP','_SP','SYM','TO','UH','VB','VBD','VBG','VBN','VBP','VBZ','WDT','WP','WP$','WRB','XX']
-POS_dict = {pos:i for i, pos in enumerate(POS_Tagging)}
 
 base_path = os.getcwd()
 nltk_data_path = base_path + "/../TF/nltk_data"
@@ -206,16 +203,6 @@ def sentences_to_padded_index_sequences(datasets, indices_to_words=None, word_in
     Annotate datasets with feature vectors. Adding right-sided padding. 
     """
     # Extract vocabulary
-    def extract_tokens(sentobj):
-        tokenlst = []
-        msg = sentobj['message']['text']
-        for sent in sentobj['sentences']:
-            for tkobj in sent['tokens']:
-                idx = tkobj['idx'] if 'idx' in tkobj else 0
-                tokenlst.append(msg[idx:(idx+tkobj['len'])])
-        return tokenlst
-    
-    
 
     word_counter = collections.Counter()
     char_counter = collections.Counter()
@@ -237,8 +224,8 @@ def sentences_to_padded_index_sequences(datasets, indices_to_words=None, word_in
     
             for example in tqdm(dataset):
                 #get the tokens
-                s1_tokenize = extract_tokens(example['sentence1'])
-                s2_tokenize = extract_tokens(example['sentence2'])
+                s1_tokenize = example['sentence1_tokens']
+                s2_tokenize = example['sentence2_tokens']
     
                 word_counter.update(s1_tokenize)
                 word_counter.update(s2_tokenize)
@@ -273,7 +260,7 @@ def sentences_to_padded_index_sequences(datasets, indices_to_words=None, word_in
                 example[sentence + '_index_sequence'] = np.zeros((FIXED_PARAMETERS["seq_length"]), dtype=np.int32)
                 example[sentence + '_inverse_term_frequency'] = np.zeros((FIXED_PARAMETERS["seq_length"]), dtype=np.float32)
 
-                token_sequence = extract_tokens(example[sentence])
+                token_sequence = example[sentence+'_tokens']
                 padding = FIXED_PARAMETERS["seq_length"] - len(token_sequence)
                       
                 for i in range(FIXED_PARAMETERS["seq_length"]):
@@ -337,16 +324,9 @@ def load_subword_list(sentences, rand = False):
 
 
 
-def parsing_parse(parse):
-    base_parse = [s.rstrip(" ").rstrip(")") for s in parse.split("(") if ")" in s]
-    pos = [pair.split(" ")[0] for pair in base_parse]
-    return pos
-
-def parse_to_pos_vector(parse, left_padding_and_cropping_pair = (0,0)): # ONE HOT
-    pos = parsing_parse(parse)
-    pos_vector = [POS_dict.get(tag,0) for tag in pos]
+def parse_to_pos_vector(pos_vector, left_padding_and_cropping_pair = (0,0)): # ONE HOT
     left_padding, left_cropping = left_padding_and_cropping_pair
-    vector = np.zeros((FIXED_PARAMETERS["seq_length"],len(POS_Tagging)))
+    vector = np.zeros((FIXED_PARAMETERS["seq_length"],len(POS_dict_spacy)))
     assert left_padding == 0 or left_cropping == 0
 
     for i in range(FIXED_PARAMETERS["seq_length"]):
@@ -356,26 +336,15 @@ def parse_to_pos_vector(parse, left_padding_and_cropping_pair = (0,0)): # ONE HO
             break
     return vector
 
-def generate_pos_feature_tensor(parses, left_padding_and_cropping_pairs):
-    pos_vectors = []
-    for parse in parses:
-        pos = parsing_parse(parse)
-        pos_vector = [(idx, POS_dict.get(tag, 0)) for idx, tag in enumerate(pos)]
-        pos_vectors.append(pos_vector)
-
-    return construct_one_hot_feature_tensor(pos_vectors, left_padding_and_cropping_pairs, 2, column_size=len(POS_Tagging))
-
-def generate_quora_pos_feature_tensor(parses, left_padding_and_cropping_pairs):
-    pos_vectors = []
-    for parse in parses:
-        pos = parse.split()
-        pos_vector = [(idx, POS_dict.get(tag, 0)) for idx, tag in enumerate(pos)]
-        pos_vectors.append(pos_vector)
-
-    return construct_one_hot_feature_tensor(pos_vectors, left_padding_and_cropping_pairs, 2, column_size=len(POS_Tagging))
 
 
+def generate_pos_feature_tensor(pos_vecs, left_padding_and_cropping_pairs):
+    pos = [[(idx, posid) for idx, posid in enumerate(pos_vec)] for pos_vec in pos_vecs]
+    return construct_one_hot_feature_tensor(pos, left_padding_and_cropping_pairs, 2, column_size=len(POS_dict_spacy))
 
+def generate_quora_pos_feature_tensor(pos, left_padding_and_cropping_pairs):
+    pos = [(idx, posid) for idx, posid in enumerate(pos)]
+    return construct_one_hot_feature_tensor(pos, left_padding_and_cropping_pairs, 2, column_size=len(POS_dict_spacy))
 
 
 def generate_crop_pad_pairs(sequences):
@@ -443,7 +412,6 @@ def construct_one_hot_feature_tensor(sequences, left_padding_and_cropping_pairs,
                 if row + left_padding - left_cropping < config.seq_length and row + left_padding - left_cropping >= 0 and col < column_size:
                     mtrx[row + left_padding - left_cropping, col] = 1
             tensor_list.append(mtrx)
-
         else:
             raise NotImplementedError
 
@@ -481,18 +449,18 @@ def generate_manual_sample_minibatch(s1_tokenize, s2_tokenize, word_indices, cha
         for ci, c in enumerate(w2):
             hypothesis_char_vectors[0, idx, ci] = char_indices.get(c, 0)
 
-    premise_pos_vectors = np.zeros((1, config.seq_length, len(POS_dict.keys())))
-    hypothesis_pos_vectors = np.zeros((1, config.seq_length, len(POS_dict.keys())))
+    premise_pos_vectors = np.zeros((1, config.seq_length, len(POS_dict_spacy.keys())))
+    hypothesis_pos_vectors = np.zeros((1, config.seq_length, len(POS_dict_spacy.keys())))
 
     s1_pos = pst.tag(s1_tokenize)
     s2_pos = pst.tag(s2_tokenize)
     for idx, pair in enumerate(s1_pos):
         word, tag = pair 
-        premise_pos_vectors[0, idx, POS_dict[tag]] = 1 
+        premise_pos_vectors[0, idx, POS_dict_spacy[tag]] = 1
 
     for idx, pair in enumerate(s2_pos):
         word, tag = pair 
-        hypothesis_pos_vectors[0, idx, POS_dict[tag]] = 1
+        hypothesis_pos_vectors[0, idx, POS_dict_spacy[tag]] = 1
 
 
     # s1_ner = nst.tag(s1_tokenize)

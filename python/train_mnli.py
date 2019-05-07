@@ -71,8 +71,7 @@ else:
     test_matched = load_nli_data(FIXED_PARAMETERS["test_matched"], shuffle=False)
     test_mismatched = load_nli_data(FIXED_PARAMETERS["test_mismatched"], shuffle=False)
 
-    shared_content = load_mnli_shared_content()
-pdb.set_trace()
+    #shared_content = load_mnli_shared_content()
 if os.path.exists(embedding_path):  ##putting word/char ids into the h5 file together with embeddings
     print("Use existing embedding file:", embedding_path)
     with h5py.File(embedding_path, 'r') as f:
@@ -88,9 +87,10 @@ if os.path.exists(embedding_path):  ##putting word/char ids into the h5 file tog
              test_snli], indices_to_words, word_indices, indices_to_chars, char_indices)
 else:
 
-    logger.Log("Loading embeddings")
+    logger.Log("No existing embedding found, create embedding")
     indices_to_words, word_indices, char_indices, indices_to_chars = sentences_to_padded_index_sequences([training_mnli, training_snli, dev_matched, dev_mismatched, test_matched, test_mismatched, dev_snli, test_snli])
     loaded_embeddings = loadEmbedding_rand(FIXED_PARAMETERS["embedding_data_path"], word_indices)
+    logger.Log("Writing embeedding to file %s".format(embedding_path))
     with h5py.File(embedding_path, 'w') as f:
         dataset = f.create_dataset('embeddings', data=loaded_embeddings)
         id2word = json.dumps(indices_to_words)
@@ -158,18 +158,18 @@ class modelClassifier:
 
         premise_pad_crop_pair = hypothesis_pad_crop_pair = [(0,0)] * len(indices)
 
-
-        premise_vectors = fill_feature_vector_with_cropping_or_padding([dataset[i]['sentence1_binary_parse_index_sequence'][:] for i in indices], premise_pad_crop_pair, 1)
-        hypothesis_vectors = fill_feature_vector_with_cropping_or_padding([dataset[i]['sentence2_binary_parse_index_sequence'][:] for i in indices], hypothesis_pad_crop_pair, 1)
-        premise_char_vectors = fill_feature_vector_with_cropping_or_padding([dataset[i]['sentence1_binary_parse_char_index'][:] for i in indices], premise_pad_crop_pair, 2, column_size=config.char_in_word_size)
-        hypothesis_char_vectors = fill_feature_vector_with_cropping_or_padding([dataset[i]['sentence2_binary_parse_char_index'][:] for i in indices], hypothesis_pad_crop_pair, 2, column_size=config.char_in_word_size)
-
-        premise_pos_vectors = generate_pos_feature_tensor([dataset[i]['sentence1_parse'][:] for i in indices], premise_pad_crop_pair)
-        hypothesis_pos_vectors = generate_pos_feature_tensor([dataset[i]['sentence2_parse'][:] for i in indices], hypothesis_pad_crop_pair)
+        premise_vectors = fill_feature_vector_with_cropping_or_padding([dataset[i]['sentence1_index_sequence'][:] for i in indices], premise_pad_crop_pair, 1)
+        hypothesis_vectors = fill_feature_vector_with_cropping_or_padding([dataset[i]['sentence2_index_sequence'][:] for i in indices], hypothesis_pad_crop_pair, 1)
+        premise_char_vectors = fill_feature_vector_with_cropping_or_padding([dataset[i]['sentence1_char_index'][:] for i in indices], premise_pad_crop_pair, 2, column_size=config.char_in_word_size)
+        hypothesis_char_vectors = fill_feature_vector_with_cropping_or_padding([dataset[i]['sentence2_char_index'][:] for i in indices], hypothesis_pad_crop_pair, 2, column_size=config.char_in_word_size)
+        premise_pos_vectors = generate_pos_feature_tensor([dataset[i]['sentence1_pos'] for i in indices], premise_pad_crop_pair)
+        hypothesis_pos_vectors = generate_pos_feature_tensor([dataset[i]['sentence2_pos'] for i in indices], hypothesis_pad_crop_pair)
 
         ###get precomputed exact match feature from shared_json
-        premise_exact_match = construct_one_hot_feature_tensor([shared_content[pairIDs[i]]["sentence1_token_exact_match_with_s2"][:] for i in range(len(indices))], premise_pad_crop_pair, 1)
-        hypothesis_exact_match = construct_one_hot_feature_tensor([shared_content[pairIDs[i]]["sentence2_token_exact_match_with_s1"][:] for i in range(len(indices))], hypothesis_pad_crop_pair, 1)
+        def get_idx(vec):
+            return [ix for ix in range(len(vec)) if vec[ix]==1]  #convert to list of indices
+        premise_exact_match = construct_one_hot_feature_tensor([get_idx(dataset[i]['sentence1_exact_match']) for i in indices], premise_pad_crop_pair, 1)
+        hypothesis_exact_match = construct_one_hot_feature_tensor([get_idx(dataset[i]['sentence2_exact_match']) for i in indices], hypothesis_pad_crop_pair, 1)
 
         premise_exact_match = np.expand_dims(premise_exact_match, 2)
         hypothesis_exact_match = np.expand_dims(hypothesis_exact_match, 2)
